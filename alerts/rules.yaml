@@ -1,0 +1,94 @@
+groups:
+  - name: kubernetes-pod-alerts
+    rules:
+
+      # Pod crash-looping
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total{namespace="app"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash-looping"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is restarting frequently."
+
+      # Pod not ready
+      - alert: PodNotReady
+        expr: kube_pod_status_ready{condition="true", namespace="app"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod }} is not ready"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          container_memory_usage_bytes{namespace="app"}
+          / container_spec_memory_limit_bytes{namespace="app"} > 0.85
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage in {{ $labels.pod }}"
+          description: "Container {{ $labels.container }} is using >85% of its memory limit."
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          rate(container_cpu_usage_seconds_total{namespace="app"}[5m])
+          / container_spec_cpu_quota{namespace="app"} * container_spec_cpu_period{namespace="app"} > 0.80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage in {{ $labels.pod }}"
+
+  - name: sla-alerts
+    rules:
+
+      # SLA breach — service availability below 99%
+      - alert: SLABreach
+        expr: avg_over_time(up{namespace="app"}[1h]) < 0.99
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLA breach — availability below 99%"
+          description: "Service {{ $labels.job }} availability dropped below 99% over the last hour."
+
+      # Services scaled above max — HPA at ceiling
+      - alert: HPAAtMaxReplicas
+        expr: |
+          kube_horizontalpodautoscaler_status_current_replicas{namespace="app"}
+          == kube_horizontalpodautoscaler_spec_max_replicas{namespace="app"}
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HPA at max replicas for {{ $labels.horizontalpodautoscaler }}"
+          description: "Service has been at max replicas for 10 minutes — consider increasing limit."
+
+  - name: node-alerts
+    rules:
+
+      # VPS high memory
+      - alert: NodeHighMemory
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          / node_memory_MemTotal_bytes > 0.90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node memory usage above 90%"
+
+      # VPS disk filling up
+      - alert: NodeDiskFilling
+        expr: |
+          (node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_free_bytes{mountpoint="/"})
+          / node_filesystem_size_bytes{mountpoint="/"} > 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage above 80% on /"
